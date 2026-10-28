@@ -749,19 +749,28 @@
 
                 count++;
                 const item = document.createElement('div');
-                item.className = `border rounded-lg p-2 text-center flex items-center justify-between transition ${
+                item.className = `border rounded-lg p-2 flex items-center justify-between text-xs transition ${
                     isUsed 
                         ? 'bg-emerald-950/40 border-emerald-600/50 text-emerald-200' 
                         : 'bg-slate-900/80 border-slate-700/60 text-slate-300'
                 }`;
 
                 item.innerHTML = `
-                    <span class="truncate ${isUsed ? 'line-through opacity-75' : ''}">${code}</span>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded font-sans font-bold ${
-                        isUsed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
-                    }">
-                        ${isUsed ? 'USED' : 'UNUSED'}
-                    </span>
+                    <div class="truncate mr-1 font-mono">
+                        <span class="${isUsed ? 'line-through opacity-75' : ''}">${code}</span>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <span class="text-[9px] px-1.5 py-0.5 rounded font-sans font-bold ${
+                            isUsed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                        }">
+                            ${isUsed ? 'USED' : 'UNUSED'}
+                        </span>
+                        ${isUsed ? `
+                            <button onclick="resetIndividualTicket('${code}')" title="Reset ticket back to Unused" class="bg-amber-950/80 hover:bg-amber-900 text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded text-[10px] transition">
+                                <i class="fa-solid fa-rotate-left"></i>
+                            </button>
+                        ` : ''}
+                    </div>
                 `;
                 allowlistGrid.appendChild(item);
             });
@@ -770,6 +779,16 @@
                 allowlistGrid.innerHTML = `<div class="col-span-2 py-8 text-center text-slate-500">No matching tickets found.</div>`;
             }
         }
+
+        window.resetIndividualTicket = function(code) {
+            if (usedTickets.has(code)) {
+                usedTickets.delete(code);
+                saveState();
+                updateStatsUI();
+                renderHistory();
+                renderAllowlistGrid(filterAllowlistInput.value);
+            }
+        };
 
         function setModalFilterTab(tab) {
             currentModalFilter = tab;
