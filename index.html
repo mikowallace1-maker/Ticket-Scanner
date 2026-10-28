@@ -1,595 +1,842 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-900 text-slate-100">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ticket Barcode Scanner</title>
-    <!-- Tailwind CSS CDN -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ticket Barcode Scanner & Validator</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- html5-qrcode Library CDN -->
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Html5-QRCode Library for broad cross-device barcode scanning fallback -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
     <style>
-        /* Custom scrollbar styling */
-        ::-webkit-scrollbar {
-            width: 6px;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            touch-action: manipulation;
         }
-        ::-webkit-scrollbar-track {
-            background: #0f172a;
+
+        /* Viewfinder Animation Overlay */
+        .scanner-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 1rem;
+            background-color: #000;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 3px;
+
+        .scan-laser {
+            position: absolute;
+            height: 3px;
+            width: 100%;
+            background: linear-gradient(90deg, rgba(239,68,68,0) 0%, rgba(239,68,68,1) 50%, rgba(239,68,68,0) 100%);
+            box-shadow: 0 0 15px #ef4444;
+            top: 0;
+            z-index: 10;
+            animation: scan 2s infinite ease-in-out;
         }
-        /* HTML5 QR Code scanner styling overrides */
+
+        @keyframes scan {
+            0% { top: 5%; }
+            50% { top: 92%; }
+            100% { top: 5%; }
+        }
+
+        /* Video element adjustments for Html5Qrcode */
+        #reader video {
+            object-fit: cover !important;
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 0.75rem;
+        }
+
         #reader {
             border: none !important;
         }
-        #reader video {
-            object-fit: cover !important;
-            border-radius: 0.75rem;
-        }
+
         #reader__scan_region {
             background: transparent !important;
         }
-        #reader__dashboard_section {
-            padding: 0.5rem !important;
+
+        /* Smooth tab animation */
+        .tab-content {
+            display: none;
         }
-        #reader__dashboard_section_csr button {
-            background-color: #3b82f6 !important;
-            color: white !important;
-            padding: 0.5rem 1rem !important;
-            border-radius: 0.5rem !important;
-            font-weight: 600 !important;
-            border: none !important;
-            margin-top: 0.5rem !important;
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Pulse Animations for status results */
+        @keyframes pop-in {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop {
+            animation: pop-in 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         }
     </style>
 </head>
-<body class="h-full flex flex-col font-sans antialiased selection:bg-blue-500 selection:text-white">
+<body class="flex flex-col min-h-screen max-w-md mx-auto shadow-2xl bg-slate-900 text-slate-100 pb-16">
 
-    <!-- Header -->
-    <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
-        <div class="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center space-x-3">
-                <div class="bg-blue-600 p-2 rounded-lg">
-                    <i class="fa-solid fa-barcode text-white text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="font-bold text-lg leading-tight">Ticket Scanner</h1>
-                    <p class="text-xs text-slate-400">HAM Series (001 - 100)</p>
-                </div>
+    <!-- Header Bar -->
+    <header class="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+            <div class="p-2 bg-indigo-600 rounded-lg text-white shadow-lg shadow-indigo-500/30">
+                <i class="fa-solid fa-ticket text-xl"></i>
             </div>
-            <div class="flex items-center space-x-2">
-                <button id="soundToggleBtn" onclick="toggleSound()" class="p-2 text-slate-400 hover:text-white bg-slate-700/50 hover:bg-slate-700 rounded-lg transition" title="Toggle Sound">
-                    <i id="soundIcon" class="fa-solid fa-volume-high text-lg text-blue-400"></i>
-                </button>
-                <button onclick="confirmReset()" class="p-2 text-slate-400 hover:text-red-400 bg-slate-700/50 hover:bg-slate-700 rounded-lg transition" title="Reset Database">
-                    <i class="fa-solid fa-rotate-right text-lg"></i>
-                </button>
+            <div>
+                <h1 class="font-bold text-lg leading-tight">Ticket Validator</h1>
+                <p class="text-xs text-slate-400">HAM Series (HAM-001 - HAM-100)</p>
             </div>
+        </div>
+        <div class="flex items-center space-x-2">
+            <span id="camera-status-dot" class="w-3 h-3 rounded-full bg-amber-500 inline-block animate-pulse"></span>
+            <span id="camera-status-text" class="text-xs text-slate-400 font-medium">Ready</span>
         </div>
     </header>
 
-    <!-- Main Body Container -->
-    <main class="flex-1 max-w-md w-full mx-auto p-4 flex flex-col space-y-4 overflow-y-auto">
-
-        <!-- Stats Overview Banner -->
-        <div class="grid grid-cols-3 gap-2 bg-slate-800/80 backdrop-blur p-3 rounded-xl border border-slate-700 text-center">
-            <div class="bg-slate-900/60 p-2 rounded-lg">
-                <div class="text-xs text-slate-400 uppercase tracking-wider">Total</div>
-                <div id="statTotal" class="text-lg font-bold text-slate-200">100</div>
-            </div>
-            <div class="bg-slate-900/60 p-2 rounded-lg">
-                <div class="text-xs text-emerald-400 uppercase tracking-wider">Valid</div>
-                <div id="statValid" class="text-lg font-bold text-emerald-400">100</div>
-            </div>
-            <div class="bg-slate-900/60 p-2 rounded-lg">
-                <div class="text-xs text-rose-400 uppercase tracking-wider">Used</div>
-                <div id="statUsed" class="text-lg font-bold text-rose-400">0</div>
-            </div>
+    <!-- Statistics Overview Bar -->
+    <div class="bg-slate-800/80 border-b border-slate-700/60 px-4 py-2.5 grid grid-cols-3 gap-2 text-center text-xs">
+        <div class="bg-slate-900/70 border border-slate-700/50 p-1.5 rounded-xl">
+            <span class="text-[10px] uppercase font-bold text-emerald-400 block">Admitted</span>
+            <span id="stat-used-count" class="text-base font-extrabold text-emerald-300 font-mono">0</span>
+            <span class="text-[9px] text-slate-500 block">/ 100</span>
         </div>
+        <div class="bg-slate-900/70 border border-slate-700/50 p-1.5 rounded-xl">
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Remaining</span>
+            <span id="stat-remaining-count" class="text-base font-extrabold text-slate-200 font-mono">100</span>
+            <span class="text-[9px] text-slate-500 block">Unused</span>
+        </div>
+        <div class="bg-slate-900/70 border border-slate-700/50 p-1.5 rounded-xl">
+            <span class="text-[10px] uppercase font-bold text-amber-400 block">Duplicates</span>
+            <span id="stat-dup-count" class="text-base font-extrabold text-amber-300 font-mono">0</span>
+            <span class="text-[9px] text-slate-500 block">Blocked</span>
+        </div>
+    </div>
 
-        <!-- Camera Scanner Section -->
-        <div class="bg-slate-800 rounded-xl p-3 border border-slate-700 shadow-xl relative overflow-hidden flex flex-col">
+    <!-- Main Container -->
+    <main class="flex-1 p-4 flex flex-col space-y-4 overflow-y-auto">
+
+        <!-- Live Scanner View Card -->
+        <div id="scanner-card" class="bg-slate-800 rounded-2xl p-3 border border-slate-700/80 shadow-xl relative">
             <div class="flex justify-between items-center mb-2 px-1">
-                <span class="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                    <i class="fa-solid fa-camera text-blue-400"></i> Live Scanner
+                <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-camera text-indigo-400"></i> Camera Scanner
                 </span>
-                <span id="scanModeIndicator" class="text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">Ready</span>
+                <button id="torch-toggle" class="hidden text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-2.5 py-1 rounded-md transition flex items-center gap-1">
+                    <i class="fa-solid fa-bolt"></i> Flash
+                </button>
             </div>
 
-            <!-- Scanner Display Container -->
-            <div class="relative w-full rounded-lg overflow-hidden bg-slate-950 aspect-square flex items-center justify-center border border-slate-800">
+            <!-- Viewfinder Area -->
+            <div class="scanner-container aspect-square w-full relative flex items-center justify-center border-2 border-dashed border-slate-700 rounded-xl overflow-hidden bg-black">
+                <!-- Html5Qrcode reader anchor -->
                 <div id="reader" class="w-full h-full"></div>
-                <div id="scannerPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 p-4 text-center">
-                    <i class="fa-solid fa-camera-retro text-4xl mb-2 text-slate-600"></i>
-                    <p class="text-xs">Camera is currently paused or inactive</p>
-                    <button onclick="startScanner()" class="mt-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition shadow-lg">
-                        Start Camera
+
+                <!-- Laser scan animation overlay -->
+                <div id="laser" class="scan-laser hidden"></div>
+
+                <!-- Viewfinder Guide Box Overlay -->
+                <div id="viewfinder-overlay" class="absolute inset-0 pointer-events-none border-[30px] border-black/50 flex items-center justify-center">
+                    <div class="w-full h-2/3 border-2 border-indigo-500/60 rounded-lg relative">
+                        <div class="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-indigo-500 rounded-tl"></div>
+                        <div class="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-indigo-500 rounded-tr"></div>
+                        <div class="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-indigo-500 rounded-bl"></div>
+                        <div class="absolute -bottom-1 -right-1 w-4 h-4 border-b-4 border-r-4 border-indigo-500 rounded-br"></div>
+                    </div>
+                </div>
+
+                <!-- Placeholder state before starting camera -->
+                <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 text-center p-6 space-y-3 z-20">
+                    <div class="w-16 h-16 rounded-full bg-indigo-900/40 border border-indigo-500/30 flex items-center justify-center text-indigo-400 text-2xl">
+                        <i class="fa-solid fa-qrcode"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium text-slate-200">Scanner Off</p>
+                        <p class="text-xs text-slate-400 mt-1">Tap below to open camera and scan ticket barcodes directly.</p>
+                    </div>
+                    <button id="start-cam-btn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-power-off"></i> Start Camera
                     </button>
                 </div>
             </div>
 
-            <!-- Camera Controls -->
-            <div class="flex gap-2 mt-3">
-                <button id="toggleCameraBtn" onclick="toggleScanner()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition shadow-md">
-                    <i class="fa-solid fa-video"></i> <span>Start Camera</span>
+            <!-- Controls under Camera View -->
+            <div class="mt-3 flex items-center justify-between gap-2">
+                <button id="stop-cam-btn" class="hidden flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-stop"></i> Stop Camera
+                </button>
+                <button id="switch-cam-btn" class="hidden py-2 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition">
+                    <i class="fa-solid fa-rotate"></i> Flip
                 </button>
             </div>
         </div>
 
-        <!-- Manual Code Input Section -->
-        <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-xl">
-            <label for="manualInput" class="text-xs font-semibold text-slate-300 block mb-2">
-                <i class="fa-solid fa-keyboard text-blue-400 mr-1"></i> Manual Code / Search
-            </label>
-            <form onsubmit="handleManualSubmit(event)" class="flex gap-2">
-                <input type="text" id="manualInput" placeholder="e.g. Ticket_HAM-042 or 042" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 uppercase tracking-wide">
-                <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition flex items-center gap-1 shadow-md">
-                    <i class="fa-solid fa-check"></i> Verify
+        <!-- Validation Result Feedback Card -->
+        <div id="result-card" class="hidden bg-slate-800 rounded-2xl p-4 border border-slate-700 shadow-xl animate-pop text-center">
+            <div id="result-badge" class="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg">
+                <!-- Icon injected by JS -->
+            </div>
+            <h2 id="result-status" class="text-xl font-bold tracking-tight mb-1">VALID TICKET</h2>
+            <p id="result-code" class="font-mono text-sm px-3 py-1 bg-slate-900/70 rounded-lg inline-block text-slate-300 mb-2 border border-slate-700/50">Ticket_HAM-001</p>
+            <p id="result-message" class="text-xs mb-3">Ticket exists in allowlist database.</p>
+            <div id="result-detail" class="hidden text-xs bg-slate-900/80 rounded-lg p-2 mb-3 border border-slate-700/50 font-mono text-slate-300"></div>
+            <button id="dismiss-result-btn" class="w-full py-2.5 bg-slate-700 hover:bg-slate-600 active:scale-[0.98] text-slate-200 text-sm font-semibold rounded-xl transition">
+                Scan Next Ticket
+            </button>
+        </div>
+
+        <!-- Fallback Manual Input Widget -->
+        <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700/80 shadow-xl space-y-3">
+            <div class="flex items-center justify-between">
+                <label for="manual-code-input" class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-keyboard text-emerald-400"></i> Manual Entry Fallback
+                </label>
+                <span class="text-[10px] text-slate-500">Exact match</span>
+            </div>
+            <form id="manual-form" class="flex gap-2">
+                <input 
+                    type="text" 
+                    id="manual-code-input" 
+                    placeholder="e.g. Ticket_HAM-042" 
+                    class="flex-1 bg-slate-900 border border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-xl px-3.5 py-2.5 text-sm font-mono text-slate-100 placeholder-slate-500 outline-none transition"
+                    autocomplete="off" 
+                    autocorrect="off" 
+                    spellcheck="false"
+                >
+                <button 
+                    type="submit" 
+                    class="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-semibold px-4 py-2.5 rounded-xl text-sm shadow-lg shadow-emerald-600/20 transition flex items-center justify-center gap-1.5"
+                >
+                    <i class="fa-solid fa-check"></i> Check
                 </button>
             </form>
-        </div>
-
-        <!-- Dynamic Status Result Box -->
-        <div id="statusResultBox" class="hidden rounded-xl p-4 border shadow-2xl transition-all duration-300">
-            <div class="flex items-start gap-3">
-                <div id="statusIconBg" class="p-3 rounded-xl flex items-center justify-center text-2xl shrink-0">
-                    <i id="statusIcon" class="fa-solid"></i>
-                </div>
-                <div class="flex-1 min-w-0">
-                    <div class="flex justify-between items-start">
-                        <h3 id="statusTitle" class="font-bold text-lg leading-tight">--</h3>
-                        <span id="statusTime" class="text-[10px] text-slate-400 bg-slate-900/40 px-2 py-0.5 rounded"></span>
-                    </div>
-                    <p id="statusTicketId" class="font-mono text-sm font-semibold mt-0.5 text-slate-200">--</p>
-                    <p id="statusMessage" class="text-xs mt-1 text-slate-300 leading-normal">--</p>
-                </div>
+            <!-- Quick Pre-fill helper -->
+            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+                <span class="text-[11px] text-slate-400">Quick Test:</span>
+                <button type="button" onclick="quickFill('Ticket_HAM-001')" class="text-[11px] font-mono bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-600/50">Ticket_HAM-001</button>
+                <button type="button" onclick="quickFill('Ticket_HAM-100')" class="text-[11px] font-mono bg-slate-700/60 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-600/50">Ticket_HAM-100</button>
+                <button type="button" onclick="quickFill('INVALID_CODE')" class="text-[11px] font-mono bg-rose-900/30 hover:bg-rose-900/50 text-rose-300 px-2 py-0.5 rounded border border-rose-800/40">Fake_Ticket</button>
             </div>
         </div>
 
-        <!-- Scan History & Ticket Log -->
-        <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 shadow-xl flex-1 flex flex-col min-h-[220px]">
+        <!-- Scan History Log Tab / Section -->
+        <div class="bg-slate-800 rounded-2xl p-4 border border-slate-700/80 shadow-xl flex-1 flex flex-col">
             <div class="flex items-center justify-between mb-3">
-                <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                    <i class="fa-solid fa-clock-rotate-left text-blue-400"></i> Scan Activity Log
-                </h2>
-                <button onclick="clearHistoryLog()" class="text-xs text-slate-400 hover:text-slate-200 transition">
-                    Clear Log
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-clock-rotate-left text-indigo-400 text-sm"></i>
+                    <h3 class="text-sm font-semibold text-slate-200">Scan Log</h3>
+                    <span id="log-count-badge" class="text-[10px] bg-slate-700 text-slate-300 font-bold px-2 py-0.5 rounded-full">0</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="reset-scanned-btn" class="text-xs text-amber-400 hover:text-amber-300 transition flex items-center gap-1 bg-amber-950/40 border border-amber-800/50 px-2 py-1 rounded-lg">
+                        <i class="fa-solid fa-arrows-rotate text-[10px]"></i> Reset Scanned
+                    </button>
+                    <button id="clear-log-btn" class="text-xs text-slate-400 hover:text-rose-400 transition flex items-center gap-1">
+                        <i class="fa-solid fa-trash-can"></i> Clear
+                    </button>
+                </div>
+            </div>
+
+            <!-- History List Container -->
+            <div id="history-container" class="space-y-2 max-h-52 overflow-y-auto pr-1 flex-1 text-xs">
+                <!-- Empty State -->
+                <div id="empty-history" class="text-center py-6 text-slate-500">
+                    <i class="fa-solid fa-barcode text-2xl mb-1 opacity-50"></i>
+                    <p>No barcodes scanned yet.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Bottom Navigation Bar for Mobile ergonomics -->
+    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-6 py-2 flex justify-around items-center z-40 text-xs">
+        <button id="nav-scan" class="flex flex-col items-center gap-1 text-indigo-400 font-semibold">
+            <i class="fa-solid fa-qrcode text-lg"></i>
+            <span>Scanner</span>
+        </button>
+        <button id="nav-allowlist" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+            <i class="fa-solid fa-list-check text-lg"></i>
+            <span>Allowlist (100)</span>
+        </button>
+    </nav>
+
+    <!-- Modal for Viewing the Allowlist -->
+    <div id="allowlist-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex flex-col max-w-md mx-auto p-4 animate-pop">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl flex flex-col h-full overflow-hidden shadow-2xl">
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800">
+                <div>
+                    <h3 class="font-bold text-slate-100 flex items-center gap-2">
+                        <i class="fa-solid fa-shield-halved text-emerald-400"></i> Pre-loaded Allowlist
+                    </h3>
+                    <p class="text-xs text-slate-400">Tickets Ticket_HAM-001 through Ticket_HAM-100</p>
+                </div>
+                <button id="close-modal-btn" class="p-2 text-slate-400 hover:text-white rounded-lg bg-slate-700/50">
+                    <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
             
-            <div id="historyList" class="flex-1 overflow-y-auto space-y-2 pr-1 max-h-[240px]">
-                <!-- Dynamic Log Items Rendered Here -->
+            <!-- Filter Bar & Category Tabs -->
+            <div class="p-3 bg-slate-900/50 border-b border-slate-800 space-y-2">
+                <input type="text" id="filter-allowlist" placeholder="Search ticket code..." class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono">
+                
+                <div class="flex gap-1">
+                    <button id="filter-tab-all" class="flex-1 py-1 rounded text-[11px] font-semibold bg-indigo-600 text-white transition">All (100)</button>
+                    <button id="filter-tab-used" class="flex-1 py-1 rounded text-[11px] font-semibold bg-slate-800 text-slate-400 hover:text-slate-200 transition">Used (<span id="modal-used-count">0</span>)</button>
+                    <button id="filter-tab-unused" class="flex-1 py-1 rounded text-[11px] font-semibold bg-slate-800 text-slate-400 hover:text-slate-200 transition">Unused (<span id="modal-unused-count">100</span>)</button>
+                </div>
             </div>
-        </div>
 
-    </main>
-
-    <!-- Reset Confirmation Modal -->
-    <div id="resetModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-xl max-w-sm w-full p-5 shadow-2xl text-center">
-            <div class="w-12 h-12 bg-rose-500/20 text-rose-400 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">
-                <i class="fa-solid fa-triangle-exclamation"></i>
+            <div id="allowlist-grid" class="p-4 overflow-y-auto grid grid-cols-2 gap-2 text-xs font-mono flex-1">
+                <!-- Allowlist items rendered here dynamically -->
             </div>
-            <h3 class="text-lg font-bold text-slate-100">Reset All Tickets?</h3>
-            <p class="text-xs text-slate-400 mt-2">This will clear scan histories and mark all 100 tickets (Ticket_HAM-001 to Ticket_HAM-100) as valid and unused.</p>
-            <div class="flex gap-2 mt-5">
-                <button onclick="closeResetModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold py-2.5 rounded-lg transition">
-                    Cancel
-                </button>
-                <button onclick="executeReset()" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold py-2.5 rounded-lg transition shadow-lg">
-                    Yes, Reset All
-                </button>
+
+            <div class="p-3 border-t border-slate-700 bg-slate-800 text-center flex justify-between items-center">
+                <p class="text-[11px] text-slate-400">Valid Tickets Loaded: <strong class="text-emerald-400 font-mono">100</strong></p>
+                <button id="modal-reset-btn" class="text-[11px] bg-amber-950/60 text-amber-400 border border-amber-800/60 px-2.5 py-1 rounded hover:bg-amber-900/80 transition">Reset All Scans</button>
             </div>
         </div>
     </div>
 
     <!-- Application Script -->
     <script>
-        const STORAGE_KEY = "ticket_db_ham_v1";
-        const HISTORY_KEY = "ticket_scan_history_v1";
-        
-        let ticketsDB = {};
-        let scanHistory = [];
-        let html5QrCode = null;
-        let isScannerRunning = false;
-        let soundEnabled = true;
-        let lastScannedCode = null;
-        let lastScanTime = 0;
-
-        // Initialize Web Audio Context for Sound Effects
-        let audioCtx = null;
-
-        function getAudioContext() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-            return audioCtx;
+        // -------------------------------------------------------------------
+        // 1. PRE-LOADED ALLOWLIST INITIALIZATION & DUPLICATE TRACKING
+        // -------------------------------------------------------------------
+        const ALLOWLIST = new Set();
+        for (let i = 1; i <= 100; i++) {
+            const padNum = String(i).padStart(3, '0');
+            ALLOWLIST.add(`Ticket_HAM-${padNum}`);
         }
 
-        // Initialize Ticket Database (Ticket_HAM-001 to Ticket_HAM-100)
-        function initDatabase() {
-            const storedDB = localStorage.getItem(STORAGE_KEY);
-            if (storedDB) {
-                ticketsDB = JSON.parse(storedDB);
-            } else {
-                ticketsDB = {};
-                for (let i = 1; i <= 100; i++) {
-                    const id = `Ticket_HAM-${String(i).padStart(3, '0')}`;
-                    ticketsDB[id] = {
-                        valid: true,
-                        used: false,
-                        usedAt: null
-                    };
-                }
-                saveDatabase();
-            }
+        // Map to keep track of scanned tickets: ticketCode -> { time: string, timestamp: number }
+        const usedTickets = new Map();
+        let totalDuplicatesBlocked = 0;
+        let currentModalFilter = 'all';
 
-            const storedHistory = localStorage.getItem(HISTORY_KEY);
-            if (storedHistory) {
-                scanHistory = JSON.parse(storedHistory);
-            }
-            updateStatsUI();
-            renderHistoryUI();
-        }
-
-        function saveDatabase() {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(ticketsDB));
-            updateStatsUI();
-        }
-
-        function saveHistory() {
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(scanHistory));
-            renderHistoryUI();
-        }
-
-        // Audio Effects Synthesizer
-        function playSound(type) {
-            if (!soundEnabled) return;
+        // Load state from localStorage on startup
+        function loadState() {
             try {
-                const ctx = getAudioContext();
-                const now = ctx.currentTime;
-
-                if (type === 'valid') {
-                    // Success High Beep
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(880, now); // A5
-                    osc.frequency.exponentialRampToValueAtTime(1760, now + 0.15); // A6
-                    gain.gain.setValueAtTime(0.3, now);
-                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.15);
-                } else if (type === 'invalid' || type === 'used') {
-                    // Error Low Buzz
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(220, now); // A3
-                    osc.frequency.setValueAtTime(110, now + 0.1); // A2
-                    gain.gain.setValueAtTime(0.4, now);
-                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start(now);
-                    osc.stop(now + 0.3);
+                const savedUsed = localStorage.getItem('ham_used_tickets');
+                if (savedUsed) {
+                    const parsed = JSON.parse(savedUsed);
+                    parsed.forEach(([code, details]) => {
+                        usedTickets.set(code, details);
+                    });
+                }
+                const savedDups = localStorage.getItem('ham_dup_count');
+                if (savedDups) {
+                    totalDuplicatesBlocked = parseInt(savedDups, 10) || 0;
                 }
             } catch (e) {
-                console.warn("Audio playback failed:", e);
+                console.warn('Could not restore saved scan state:', e);
+            }
+            updateStatsUI();
+        }
+
+        function saveState() {
+            try {
+                localStorage.setItem('ham_used_tickets', JSON.stringify(Array.from(usedTickets.entries())));
+                localStorage.setItem('ham_dup_count', totalDuplicatesBlocked.toString());
+            } catch (e) {
+                console.warn('Could not persist scan state:', e);
             }
         }
 
-        function triggerVibration(pattern) {
-            if ("vibrate" in navigator) {
-                navigator.vibrate(pattern);
+        function resetAllScannedTickets() {
+            if (confirm("Are you sure you want to reset all scanned tickets? All admitted tickets will become UNUSED again.")) {
+                usedTickets.clear();
+                totalDuplicatesBlocked = 0;
+                saveState();
+                updateStatsUI();
+                renderHistory();
+                renderAllowlistGrid(filterAllowlistInput.value);
+                
+                resultCard.classList.add('hidden');
             }
         }
 
-        function toggleSound() {
-            soundEnabled = !soundEnabled;
-            const icon = document.getElementById("soundIcon");
-            if (soundEnabled) {
-                icon.className = "fa-solid fa-volume-high text-lg text-blue-400";
-            } else {
-                icon.className = "fa-solid fa-volume-xmark text-lg text-slate-500";
-            }
-        }
+        // -------------------------------------------------------------------
+        // 2. STATE MANAGEMENT & DOM ELEMENTS
+        // -------------------------------------------------------------------
+        let html5QrcodeScanner = null;
+        let isScanning = false;
+        let lastScannedCode = null;
+        let lastScanTime = 0;
+        let scanHistory = [];
 
-        // Normalize raw string input to expected ticket ID format
-        function normalizeTicketCode(input) {
-            if (!input) return "";
-            let cleaned = input.trim();
-            // Handle numeric shortcut (e.g. "42" -> "Ticket_HAM-042")
-            if (/^\d{1,3}$/.test(cleaned)) {
-                return `Ticket_HAM-${String(cleaned).padStart(3, '0')}`;
-            }
-            // Case-insensitive match for HAM pattern
-            const match = cleaned.match(/HAM[-_]?(\d{1,3})/i);
-            if (match) {
-                return `Ticket_HAM-${String(match[1]).padStart(3, '0')}`;
-            }
-            return cleaned;
-        }
+        // DOM Elements
+        const readerEl = document.getElementById('reader');
+        const laserEl = document.getElementById('laser');
+        const placeholderEl = document.getElementById('camera-placeholder');
+        const startCamBtn = document.getElementById('start-cam-btn');
+        const stopCamBtn = document.getElementById('stop-cam-btn');
+        const switchCamBtn = document.getElementById('switch-cam-btn');
+        const torchToggleBtn = document.getElementById('torch-toggle');
+        const cameraStatusDot = document.getElementById('camera-status-dot');
+        const cameraStatusText = document.getElementById('camera-status-text');
 
-        // Core Ticket Validation Logic
-        function verifyAndMarkTicket(rawCode, source = 'Scan') {
-            const ticketId = normalizeTicketCode(rawCode);
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const dateISO = now.toISOString();
+        const resultCard = document.getElementById('result-card');
+        const resultBadge = document.getElementById('result-badge');
+        const resultStatus = document.getElementById('result-status');
+        const resultCode = document.getElementById('result-code');
+        const resultMessage = document.getElementById('result-message');
+        const resultDetail = document.getElementById('result-detail');
+        const dismissResultBtn = document.getElementById('dismiss-result-btn');
 
-            let status = '';
-            let title = '';
-            let message = '';
+        const statUsedCount = document.getElementById('stat-used-count');
+        const statRemainingCount = document.getElementById('stat-remaining-count');
+        const statDupCount = document.getElementById('stat-dup-count');
+        const modalUsedCount = document.getElementById('modal-used-count');
+        const modalUnusedCount = document.getElementById('modal-unused-count');
 
-            if (ticketsDB.hasOwnProperty(ticketId)) {
-                const ticket = ticketsDB[ticketId];
-                if (!ticket.used) {
-                    // VALID UNUSED TICKET
-                    ticket.used = true;
-                    ticket.usedAt = dateISO;
-                    saveDatabase();
+        const manualForm = document.getElementById('manual-form');
+        const manualInput = document.getElementById('manual-code-input');
 
-                    status = 'SUCCESS';
-                    title = 'ENTRY GRANTED';
-                    message = 'Ticket is valid! Marked as USED.';
-                    playSound('valid');
-                    triggerVibration([100]);
-                } else {
-                    // ALREADY USED TICKET
-                    const prevTime = new Date(ticket.usedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                    status = 'ALREADY_USED';
-                    title = 'INVALID / RE-ENTRY';
-                    message = `Ticket was ALREADY USED at ${prevTime}. Access denied!`;
-                    playSound('used');
-                    triggerVibration([150, 50, 150]);
+        const historyContainer = document.getElementById('history-container');
+        const emptyHistory = document.getElementById('empty-history');
+        const clearLogBtn = document.getElementById('clear-log-btn');
+        const resetScannedBtn = document.getElementById('reset-scanned-btn');
+        const modalResetBtn = document.getElementById('modal-reset-btn');
+        const logCountBadge = document.getElementById('log-count-badge');
+
+        const navScan = document.getElementById('nav-scan');
+        const navAllowlist = document.getElementById('nav-allowlist');
+        const allowlistModal = document.getElementById('allowlist-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const allowlistGrid = document.getElementById('allowlist-grid');
+        const filterAllowlistInput = document.getElementById('filter-allowlist');
+
+        const filterTabAll = document.getElementById('filter-tab-all');
+        const filterTabUsed = document.getElementById('filter-tab-used');
+        const filterTabUnused = document.getElementById('filter-tab-unused');
+
+        // Audio Effects using Web Audio API
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(type) {
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
                 }
-            } else {
-                // NOT IN DATABASE
-                status = 'NOT_FOUND';
-                title = 'INVALID TICKET';
-                message = 'Barcode does not exist in HAM database.';
-                playSound('invalid');
-                triggerVibration([300]);
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'SUCCESS') {
+                    // High double beep for valid
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+                    osc.frequency.setValueAtTime(1174.66, audioCtx.currentTime + 0.1); // D6
+                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                    osc.start(audioCtx.currentTime);
+                    osc.stop(audioCtx.currentTime + 0.3);
+                } else if (type === 'DUPLICATE') {
+                    // Double warning beep
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
+                    osc.frequency.setValueAtTime(349.23, audioCtx.currentTime + 0.15); // F4
+                    gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+                    osc.start(audioCtx.currentTime);
+                    osc.stop(audioCtx.currentTime + 0.35);
+                } else {
+                    // Low buzz for invalid
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(220, audioCtx.currentTime); // A3
+                    osc.frequency.setValueAtTime(164.81, audioCtx.currentTime + 0.15); // E3
+                    gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                    osc.start(audioCtx.currentTime);
+                    osc.stop(audioCtx.currentTime + 0.4);
+                }
+            } catch (e) {
+                console.warn('Audio feedback failed:', e);
             }
-
-            // Display Visual Feedback Box
-            showResultBanner(status, title, ticketId, message, timeStr);
-
-            // Append to Scan History
-            scanHistory.unshift({
-                ticketId: ticketId || rawCode,
-                status: status,
-                time: timeStr,
-                source: source
-            });
-
-            // Limit history to last 50 items
-            if (scanHistory.length > 50) scanHistory.pop();
-            saveHistory();
         }
 
-        // Render Status Result Box
-        function showResultBanner(status, title, ticketId, message, timeStr) {
-            const box = document.getElementById("statusResultBox");
-            const iconBg = document.getElementById("statusIconBg");
-            const icon = document.getElementById("statusIcon");
-            const titleEl = document.getElementById("statusTitle");
-            const ticketEl = document.getElementById("statusTicketId");
-            const msgEl = document.getElementById("statusMessage");
-            const timeEl = document.getElementById("statusTime");
-
-            box.classList.remove("hidden", "bg-emerald-950/80", "border-emerald-500/50", "bg-rose-950/80", "border-rose-500/50", "bg-amber-950/80", "border-amber-500/50");
-            iconBg.classList.remove("bg-emerald-500/20", "text-emerald-400", "bg-rose-500/20", "text-rose-400", "bg-amber-500/20", "text-amber-400");
-
-            titleEl.textContent = title;
-            ticketEl.textContent = ticketId;
-            msgEl.textContent = message;
-            timeEl.textContent = timeStr;
-
-            if (status === 'SUCCESS') {
-                box.classList.add("bg-emerald-950/80", "border-emerald-500/50");
-                iconBg.classList.add("bg-emerald-500/20", "text-emerald-400");
-                icon.className = "fa-solid fa-circle-check";
-            } else if (status === 'ALREADY_USED') {
-                box.classList.add("bg-amber-950/80", "border-amber-500/50");
-                iconBg.classList.add("bg-amber-500/20", "text-amber-400");
-                icon.className = "fa-solid fa-user-xmark";
-            } else {
-                box.classList.add("bg-rose-950/80", "border-rose-500/50");
-                iconBg.classList.add("bg-rose-500/20", "text-rose-400");
-                icon.className = "fa-solid fa-circle-xmark";
+        // Vibration Feedback API
+        function vibrate(type) {
+            if ('vibrate' in navigator) {
+                if (type === 'SUCCESS') {
+                    navigator.vibrate(100);
+                } else if (type === 'DUPLICATE') {
+                    navigator.vibrate([100, 50, 100, 50, 100]);
+                } else {
+                    navigator.vibrate([200, 100, 200]);
+                }
             }
-
-            // Auto-scroll result into view on mobile
-            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
-        // Stats UI Update
         function updateStatsUI() {
-            const total = Object.keys(ticketsDB).length;
-            let usedCount = 0;
-            for (let key in ticketsDB) {
-                if (ticketsDB[key].used) usedCount++;
-            }
-            const validCount = total - usedCount;
+            const usedCount = usedTickets.size;
+            const remainingCount = 100 - usedCount;
 
-            document.getElementById("statTotal").textContent = total;
-            document.getElementById("statValid").textContent = validCount;
-            document.getElementById("statUsed").textContent = usedCount;
+            statUsedCount.textContent = usedCount;
+            statRemainingCount.textContent = remainingCount;
+            statDupCount.textContent = totalDuplicatesBlocked;
+
+            modalUsedCount.textContent = usedCount;
+            modalUnusedCount.textContent = remainingCount;
         }
 
-        // History UI Render
-        function renderHistoryUI() {
-            const historyList = document.getElementById("historyList");
-            if (scanHistory.length === 0) {
-                historyList.innerHTML = `<div class="text-center py-6 text-slate-500 text-xs">No scan records available yet.</div>`;
-                return;
-            }
+        // -------------------------------------------------------------------
+        // 3. BARCODE SCANNER LOGIC
+        // -------------------------------------------------------------------
+        async function startScanner() {
+            if (isScanning) return;
 
-            historyList.innerHTML = scanHistory.map(item => {
-                let statusBadge = '';
-                if (item.status === 'SUCCESS') {
-                    statusBadge = `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold px-2 py-0.5 rounded">VALID</span>`;
-                } else if (item.status === 'ALREADY_USED') {
-                    statusBadge = `<span class="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-semibold px-2 py-0.5 rounded">USED</span>`;
-                } else {
-                    statusBadge = `<span class="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-semibold px-2 py-0.5 rounded">INVALID</span>`;
+            try {
+                placeholderEl.classList.add('hidden');
+                laserEl.classList.remove('hidden');
+
+                if (!html5QrcodeScanner) {
+                    html5QrcodeScanner = new Html5Qrcode("reader");
                 }
 
-                return `
-                    <div class="bg-slate-900/60 border border-slate-700/60 rounded-lg p-2.5 flex items-center justify-between text-xs">
-                        <div class="flex items-center space-x-2.5 min-w-0">
-                            <span class="text-slate-500 font-mono text-[10px] shrink-0">${item.time}</span>
-                            <span class="font-mono font-medium text-slate-200 truncate">${item.ticketId}</span>
-                        </div>
-                        <div class="flex items-center space-x-2 shrink-0">
-                            <span class="text-[10px] text-slate-500 uppercase">${item.source}</span>
-                            ${statusBadge}
-                        </div>
-                    </div>
-                `;
-            }).join('');
+                const config = {
+                    fps: 15,
+                    qrbox: { width: 260, height: 160 },
+                    aspectRatio: 1.0,
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true
+                    }
+                };
+
+                await html5QrcodeScanner.start(
+                    { facingMode: "environment" },
+                    config,
+                    onScanSuccess,
+                    onScanFailure
+                );
+
+                isScanning = true;
+                updateScannerUI(true);
+
+            } catch (err) {
+                console.error("Camera startup error:", err);
+                placeholderEl.classList.remove('hidden');
+                laserEl.classList.add('hidden');
+                updateScannerUI(false);
+                alert("Could not access camera. Please check permissions or use manual entry.");
+            }
         }
 
-        function clearHistoryLog() {
-            scanHistory = [];
-            saveHistory();
+        async function stopScanner() {
+            if (!isScanning || !html5QrcodeScanner) return;
+            try {
+                await html5QrcodeScanner.stop();
+                isScanning = false;
+                placeholderEl.classList.remove('hidden');
+                laserEl.classList.add('hidden');
+                updateScannerUI(false);
+            } catch (err) {
+                console.error("Failed to stop scanner:", err);
+            }
         }
 
-        // Manual Input Handler
-        function handleManualSubmit(e) {
-            e.preventDefault();
-            const inputEl = document.getElementById("manualInput");
-            const value = inputEl.value;
-            if (!value) return;
-            
-            verifyAndMarkTicket(value, 'Manual');
-            inputEl.value = '';
+        function updateScannerUI(active) {
+            if (active) {
+                startCamBtn.classList.add('hidden');
+                stopCamBtn.classList.remove('hidden');
+                switchCamBtn.classList.remove('hidden');
+                cameraStatusDot.className = "w-3 h-3 rounded-full bg-emerald-500 inline-block animate-pulse";
+                cameraStatusText.textContent = "Active";
+                cameraStatusText.className = "text-xs text-emerald-400 font-medium";
+            } else {
+                startCamBtn.classList.remove('hidden');
+                stopCamBtn.classList.add('hidden');
+                switchCamBtn.classList.add('hidden');
+                cameraStatusDot.className = "w-3 h-3 rounded-full bg-amber-500 inline-block animate-pulse";
+                cameraStatusText.textContent = "Standby";
+                cameraStatusText.className = "text-xs text-slate-400 font-medium";
+            }
         }
 
-        // HTML5 QR Code Scanner Functions
-        function onScanSuccess(decodedText) {
-            const currentTime = new Date().getTime();
-            // Prevent duplicate rapid scans of the same code within 2.5s
-            if (decodedText === lastScannedCode && (currentTime - lastScanTime) < 2500) {
+        function onScanSuccess(decodedText, decodedResult) {
+            const now = Date.now();
+            if (decodedText === lastScannedCode && (now - lastScanTime) < 2000) {
                 return;
             }
 
             lastScannedCode = decodedText;
-            lastScanTime = currentTime;
+            lastScanTime = now;
 
-            verifyAndMarkTicket(decodedText, 'Camera');
+            validateAndProcessBarcode(decodedText, 'Camera');
         }
 
-        function startScanner() {
-            if (isScannerRunning) return;
+        function onScanFailure(error) {
+            // Frame non-detection
+        }
 
-            document.getElementById("scannerPlaceholder").classList.add("hidden");
-            
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
+        window.quickFill = function(code) {
+            manualInput.value = code;
+            validateAndProcessBarcode(code, 'Manual Entry');
+        };
+
+        // -------------------------------------------------------------------
+        // 4. TICKET VALIDATION ENGINE (With Duplicate Tracking)
+        // -------------------------------------------------------------------
+        function validateAndProcessBarcode(code, source = 'Scan') {
+            const trimmedCode = code.trim();
+            if (!trimmedCode) return;
+
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            let status = 'INVALID'; // 'VALID', 'DUPLICATE', or 'INVALID'
+
+            if (ALLOWLIST.has(trimmedCode)) {
+                if (usedTickets.has(trimmedCode)) {
+                    status = 'DUPLICATE';
+                    totalDuplicatesBlocked++;
+                } else {
+                    status = 'VALID';
+                    usedTickets.set(trimmedCode, { time: timeStr, timestamp: Date.now() });
+                }
             }
 
-            const config = {
-                fps: 10,
-                qrbox: { width: 250, height: 180 },
-                aspectRatio: 1.0
+            saveState();
+            updateStatsUI();
+
+            // Feedback
+            playSound(status === 'VALID' ? 'SUCCESS' : (status === 'DUPLICATE' ? 'DUPLICATE' : 'INVALID'));
+            vibrate(status === 'VALID' ? 'SUCCESS' : (status === 'DUPLICATE' ? 'DUPLICATE' : 'INVALID'));
+
+            displayResult(trimmedCode, status, timeStr);
+            addToHistory(trimmedCode, status, source, timeStr);
+        }
+
+        function displayResult(code, status, currentScanTime) {
+            resultCard.classList.remove('hidden');
+            resultCode.textContent = code;
+
+            if (status === 'VALID') {
+                resultCard.className = "bg-emerald-950/90 border-2 border-emerald-500 rounded-2xl p-4 shadow-2xl animate-pop text-center text-emerald-100";
+                resultBadge.className = "w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-2 bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/40";
+                resultBadge.innerHTML = `<i class="fa-solid fa-check"></i>`;
+                resultStatus.textContent = "VALID - ENTRY ADMITTED";
+                resultStatus.className = "text-xl font-black tracking-tight mb-1 text-emerald-400";
+                resultMessage.textContent = "First scan successful! Ticket marked as USED.";
+                resultDetail.classList.add('hidden');
+            } else if (status === 'DUPLICATE') {
+                const prevRecord = usedTickets.get(code);
+                const firstScannedAt = prevRecord ? prevRecord.time : 'Earlier';
+
+                resultCard.className = "bg-amber-950/90 border-2 border-amber-500 rounded-2xl p-4 shadow-2xl animate-pop text-center text-amber-100";
+                resultBadge.className = "w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-2 bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/40";
+                resultBadge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>`;
+                resultStatus.textContent = "DUPLICATE - ALREADY USED";
+                resultStatus.className = "text-xl font-black tracking-tight mb-1 text-amber-400";
+                resultMessage.textContent = "ACCESS DENIED! This ticket was already scanned previously.";
+                
+                resultDetail.innerHTML = `<i class="fa-solid fa-clock text-amber-400"></i> First Admitted At: <strong>${firstScannedAt}</strong>`;
+                resultDetail.classList.remove('hidden');
+            } else {
+                resultCard.className = "bg-rose-950/90 border-2 border-rose-500 rounded-2xl p-4 shadow-2xl animate-pop text-center text-rose-100";
+                resultBadge.className = "w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-2 bg-rose-500 text-white shadow-lg shadow-rose-500/40";
+                resultBadge.innerHTML = `<i class="fa-solid fa-xmark"></i>`;
+                resultStatus.textContent = "INVALID TICKET";
+                resultStatus.className = "text-xl font-black tracking-tight mb-1 text-rose-400";
+                resultMessage.textContent = "REJECTED! Ticket code not found in official allowlist.";
+                resultDetail.classList.add('hidden');
+            }
+
+            resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        // -------------------------------------------------------------------
+        // 5. SCAN HISTORY LOGGING
+        // -------------------------------------------------------------------
+        function addToHistory(code, status, source, timeStr) {
+            const logItem = {
+                id: Date.now(),
+                code,
+                status,
+                source,
+                time: timeStr
             };
 
-            html5QrCode.start(
-                { facingMode: "environment" },
-                config,
-                onScanSuccess,
-                (errorMessage) => {
-                    // Silent parse failures during active scanning
+            scanHistory.unshift(logItem);
+            renderHistory();
+        }
+
+        function renderHistory() {
+            logCountBadge.textContent = scanHistory.length;
+
+            if (scanHistory.length === 0) {
+                emptyHistory.classList.remove('hidden');
+                historyContainer.innerHTML = '';
+                historyContainer.appendChild(emptyHistory);
+                return;
+            }
+
+            emptyHistory.classList.add('hidden');
+            historyContainer.innerHTML = '';
+
+            scanHistory.forEach(item => {
+                const row = document.createElement('div');
+                
+                let borderStyle = 'border-slate-700/50';
+                let badgeClass = 'bg-slate-800 text-slate-300';
+                let iconClass = 'fa-xmark text-rose-400';
+                let statusLabel = 'INVALID';
+
+                if (item.status === 'VALID') {
+                    borderStyle = 'border-emerald-500/30';
+                    badgeClass = 'bg-emerald-950 text-emerald-400 border border-emerald-800';
+                    iconClass = 'fa-check text-emerald-400';
+                    statusLabel = 'ADMITTED';
+                } else if (item.status === 'DUPLICATE') {
+                    borderStyle = 'border-amber-500/30';
+                    badgeClass = 'bg-amber-950 text-amber-400 border border-amber-800';
+                    iconClass = 'fa-copy text-amber-400';
+                    statusLabel = 'DUPLICATE';
+                } else {
+                    borderStyle = 'border-rose-500/30';
+                    badgeClass = 'bg-rose-950 text-rose-400 border border-rose-800';
+                    iconClass = 'fa-ban text-rose-400';
+                    statusLabel = 'INVALID';
                 }
-            ).then(() => {
-                isScannerRunning = true;
-                updateCameraControlsUI();
-            }).catch((err) => {
-                console.error("Camera access failed:", err);
-                document.getElementById("scannerPlaceholder").classList.remove("hidden");
-                alert("Unable to access camera. Please verify camera permissions or use manual entry.");
-                isScannerRunning = false;
-                updateCameraControlsUI();
+
+                row.className = `flex items-center justify-between p-2.5 rounded-xl border bg-slate-900/60 ${borderStyle}`;
+
+                row.innerHTML = `
+                    <div class="flex items-center space-x-2.5 min-w-0">
+                        <span class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-xs font-bold bg-slate-800">
+                            <i class="fa-solid ${iconClass}"></i>
+                        </span>
+                        <div class="truncate">
+                            <p class="font-mono font-semibold truncate ${
+                                item.status === 'VALID' ? 'text-emerald-300' : (item.status === 'DUPLICATE' ? 'text-amber-300' : 'text-rose-300')
+                            }">${escapeHtml(item.code)}</p>
+                            <p class="text-[10px] text-slate-400">${item.source} • ${item.time}</p>
+                        </div>
+                    </div>
+                    <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded shrink-0 ${badgeClass}">
+                        ${statusLabel}
+                    </span>
+                `;
+
+                historyContainer.appendChild(row);
             });
         }
 
-        function stopScanner() {
-            if (!html5QrCode || !isScannerRunning) return;
-
-            html5QrCode.stop().then(() => {
-                isScannerRunning = false;
-                document.getElementById("scannerPlaceholder").classList.remove("hidden");
-                updateCameraControlsUI();
-            }).catch((err) => {
-                console.error("Failed to stop camera:", err);
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
             });
         }
 
-        function toggleScanner() {
-            if (isScannerRunning) {
-                stopScanner();
-            } else {
-                startScanner();
+        // -------------------------------------------------------------------
+        // 6. ALLOWLIST MODAL & FILTER RENDERER
+        // -------------------------------------------------------------------
+        function renderAllowlistGrid(searchQuery = '') {
+            allowlistGrid.innerHTML = '';
+            const query = searchQuery.toLowerCase().trim();
+
+            let count = 0;
+            ALLOWLIST.forEach(code => {
+                const isUsed = usedTickets.has(code);
+
+                // Filter tabs
+                if (currentModalFilter === 'used' && !isUsed) return;
+                if (currentModalFilter === 'unused' && isUsed) return;
+
+                // Search query filter
+                if (query && !code.toLowerCase().includes(query)) return;
+
+                count++;
+                const item = document.createElement('div');
+                item.className = `border rounded-lg p-2 text-center flex items-center justify-between transition ${
+                    isUsed 
+                        ? 'bg-emerald-950/40 border-emerald-600/50 text-emerald-200' 
+                        : 'bg-slate-900/80 border-slate-700/60 text-slate-300'
+                }`;
+
+                item.innerHTML = `
+                    <span class="truncate ${isUsed ? 'line-through opacity-75' : ''}">${code}</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded font-sans font-bold ${
+                        isUsed ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                    }">
+                        ${isUsed ? 'USED' : 'UNUSED'}
+                    </span>
+                `;
+                allowlistGrid.appendChild(item);
+            });
+
+            if (count === 0) {
+                allowlistGrid.innerHTML = `<div class="col-span-2 py-8 text-center text-slate-500">No matching tickets found.</div>`;
             }
         }
 
-        function updateCameraControlsUI() {
-            const btn = document.getElementById("toggleCameraBtn");
-            const indicator = document.getElementById("scanModeIndicator");
-
-            if (isScannerRunning) {
-                btn.className = "flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition shadow-md";
-                btn.innerHTML = `<i class="fa-solid fa-video-slash"></i> <span>Stop Camera</span>`;
-                indicator.className = "text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20";
-                indicator.textContent = "Scanning Active";
-            } else {
-                btn.className = "flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition shadow-md";
-                btn.innerHTML = `<i class="fa-solid fa-video"></i> <span>Start Camera</span>`;
-                indicator.className = "text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20";
-                indicator.textContent = "Ready";
-            }
-        }
-
-        // Database Reset Modal Commands
-        function confirmReset() {
-            document.getElementById("resetModal").classList.remove("hidden");
-        }
-
-        function closeResetModal() {
-            document.getElementById("resetModal").classList.add("hidden");
-        }
-
-        function executeReset() {
-            localStorage.removeItem(STORAGE_KEY);
-            localStorage.removeItem(HISTORY_KEY);
-            ticketsDB = {};
-            scanHistory = [];
-            initDatabase();
-            document.getElementById("statusResultBox").classList.add("hidden");
-            closeResetModal();
-        }
-
-        // App Initialization
-        window.addEventListener("DOMContentLoaded", () => {
-            initDatabase();
+        function setModalFilterTab(tab) {
+            currentModalFilter = tab;
             
-            // Activate AudioContext on user touch/click
-            document.body.addEventListener('click', () => {
-                getAudioContext();
-            }, { once: true });
+            [filterTabAll, filterTabUsed, filterTabUnused].forEach(btn => {
+                btn.className = "flex-1 py-1 rounded text-[11px] font-semibold bg-slate-800 text-slate-400 hover:text-slate-200 transition";
+            });
+
+            if (tab === 'all') {
+                filterTabAll.className = "flex-1 py-1 rounded text-[11px] font-semibold bg-indigo-600 text-white transition";
+            } else if (tab === 'used') {
+                filterTabUsed.className = "flex-1 py-1 rounded text-[11px] font-semibold bg-emerald-600 text-white transition";
+            } else {
+                filterTabUnused.className = "flex-1 py-1 rounded text-[11px] font-semibold bg-slate-600 text-white transition";
+            }
+
+            renderAllowlistGrid(filterAllowlistInput.value);
+        }
+
+        // -------------------------------------------------------------------
+        // 7. EVENT LISTENERS
+        // -------------------------------------------------------------------
+        startCamBtn.addEventListener('click', startScanner);
+        stopCamBtn.addEventListener('click', stopScanner);
+
+        dismissResultBtn.addEventListener('click', () => {
+            resultCard.classList.add('hidden');
         });
+
+        manualForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const code = manualInput.value;
+            if (code) {
+                validateAndProcessBarcode(code, 'Manual Input');
+                manualInput.value = '';
+            }
+        });
+
+        clearLogBtn.addEventListener('click', () => {
+            scanHistory = [];
+            renderHistory();
+        });
+
+        resetScannedBtn.addEventListener('click', resetAllScannedTickets);
+        modalResetBtn.addEventListener('click', resetAllScannedTickets);
+
+        // Navigation & Modal triggers
+        navAllowlist.addEventListener('click', () => {
+            renderAllowlistGrid(filterAllowlistInput.value);
+            allowlistModal.classList.remove('hidden');
+        });
+
+        closeModalBtn.addEventListener('click', () => {
+            allowlistModal.classList.add('hidden');
+        });
+
+        filterAllowlistInput.addEventListener('input', (e) => {
+            renderAllowlistGrid(e.target.value);
+        });
+
+        filterTabAll.addEventListener('click', () => setModalFilterTab('all'));
+        filterTabUsed.addEventListener('click', () => setModalFilterTab('used'));
+        filterTabUnused.addEventListener('click', () => setModalFilterTab('unused'));
+
+        // Initialize state on boot
+        loadState();
+        renderHistory();
     </script>
 </body>
 </html>
