@@ -307,7 +307,7 @@
         const ALLOWLIST = new Set();
         for (let i = 1; i <= 100; i++) {
             const padNum = String(i).padStart(3, '0');
-            ALLOWLIST.add(`Ticket_HAM-${padNum}`);
+            ALLOWLIST.add(`HAM-${padNum}`);
         }
 
         // Map to keep track of scanned tickets: ticketCode -> { time: string, timestamp: number }
