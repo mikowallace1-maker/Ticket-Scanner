@@ -577,12 +577,19 @@
             validateAndProcessBarcode(code, 'Manual Entry');
         };
 
-        // -------------------------------------------------------------------
-        // 4. TICKET VALIDATION ENGINE (With Duplicate Tracking)
+// -------------------------------------------------------------------
+        // 4. TICKET VALIDATION ENGINE (With Duplicate Tracking & Flexible Parsing)
         // -------------------------------------------------------------------
         function validateAndProcessBarcode(code, source = 'Scan') {
-            const trimmedCode = code.trim();
-            if (!trimmedCode) return;
+            let rawCode = code.trim();
+            if (!rawCode) return;
+
+            // Extract any HAM-### pattern (e.g. HAM-001 through HAM-100)
+            let trimmedCode = rawCode.toUpperCase();
+            const match = trimmedCode.match(/(HAM-\d{3})/);
+            if (match) {
+                trimmedCode = match[1];
+            }
 
             const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             let status = 'INVALID'; // 'VALID', 'DUPLICATE', or 'INVALID'
